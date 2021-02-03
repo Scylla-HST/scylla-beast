@@ -1,6 +1,6 @@
 Scylla HST
 ==========
-Repository for code related to the HST program Scylla!
+Repository for code related to the `BEAST <https://github.com/BEAST-Fitting/beast>`_ workflow for the HST program Scylla!
 
 AST Workflow
 --------------
