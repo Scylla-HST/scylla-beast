@@ -40,7 +40,7 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
     * split catalog by source density
     * make physics model (SED grid)
     * make input list for ASTs
-    * trim input ASTs
+    * prune input ASTs
 
     ----
     Inputs:
@@ -246,39 +246,41 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         )
 
         # --------------------
-        # 3.1 trim AST inputs
+        # 3.1 "prune" AST inputs
         # --------------------
 
-        # trim input AST by flux (empirically determined)
+        # prune input AST by flux (empirically determined)
         ast_input_tab = Table.read(ast_input_file, format="ascii")
-        ast_input_tab_trim = ast_input_tab.copy()
+        ast_input_tab_pruned = ast_input_tab.copy()
 
         if "F336W" in gst_filter_names:
-            trim_spots = (
-                (ast_input_tab_trim["HST_WFC3_F336W"] > 30.5)
-                & (ast_input_tab_trim["HST_WFC3_F475W"] > 32.5)
-                & (ast_input_tab_trim["HST_WFC3_F814W"] > 29.0)
+            prune_spots = (
+                (ast_input_tab_pruned["HST_WFC3_F336W"] > 30.5)
+                & (ast_input_tab_pruned["HST_WFC3_F475W"] > 32.5)
+                & (ast_input_tab_pruned["HST_WFC3_F814W"] > 29.0)
             )
         else:
-            trim_spots = (ast_input_tab_trim["HST_WFC3_F475W"] > 32.5) & (
-                ast_input_tab_trim["HST_WFC3_F814W"] > 29.0
+            prune_spots = (ast_input_tab_pruned["HST_WFC3_F475W"] > 32.5) & (
+                ast_input_tab_pruned["HST_WFC3_F814W"] > 29.0
             )
 
-        ast_input_tab_trim = ast_input_tab_trim[~trim_spots]
+        ast_input_tab_pruned = ast_input_tab_pruned[~prune_spots]
 
-        # write trimmed ast input table to a txt file
-        ast_input_file_trimmed = (
-            "./" + field_name + "/" + field_name + "_inputAST_trim.txt"
+        # write pruned ast input table to a txt file
+        ast_input_file_pruned = (
+            "./" + field_name + "/" + field_name + "_inputAST_pruned.txt"
         )
-        ast_input_tab_trim.write(ast_input_file_trimmed, format="ascii", overwrite=True)
+        ast_input_tab_pruned.write(
+            ast_input_file_pruned, format="ascii", overwrite=True
+        )
 
-        # print out number of trimmed ASTs per source density bin as a sanity check
-        print("trimmed input AST statistics per bin")
-        input_ast_bin_stats(settings, ast_input_file_trimmed, field_names[b])
+        # print out number of pruned ASTs per source density bin as a sanity check
+        print("pruned input AST statistics per bin")
+        input_ast_bin_stats(settings, ast_input_file_pruned, field_names[b])
 
-        # compare magnitude histograms of trimmed ASTs with catalog
+        # compare magnitude histograms of pruned ASTs with catalog
         plot_ast_histogram.plot_ast_histogram(
-            ast_file=ast_input_file_trimmed, sed_grid_file=model_grid_files[0]
+            ast_file=ast_input_file_pruned, sed_grid_file=model_grid_files[0]
         )
 
         print("now go check the diagnostic plots!")
