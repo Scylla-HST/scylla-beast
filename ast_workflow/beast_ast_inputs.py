@@ -20,7 +20,9 @@ from beast.tools import (
 )
 
 from beast.tools.density_map import BinnedDensityMap
-
+from beast.observationmodel.observations import Observations
+from beast.physicsmodel.grid import SEDGrid
+from beast.observationmodel.vega import Vega
 from beast.plotting import plot_mag_hist, plot_ast_histogram
 
 from astropy.io import fits
@@ -249,22 +251,34 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         # 3.1 "prune" AST inputs
         # --------------------
 
-        # prune input AST by flux (empirically determined)
         ast_input_tab = Table.read(ast_input_file, format="ascii")
+
+        # find filter list in asts
+        filter_cols = [col for col in ast_input_tab.colnames if "_" in col]
+        filter_list = [col[-5:] for col in filter_cols]
+
+        # load model SED grid and convert to magnitudes
+        modelsedgrid = SEDGrid(model_grid_files[b])
+        with Vega() as v:
+            _, vega_flux, _ = v.getFlux(filter_cols)
+        sedsMags = -2.5 * np.log10(modelsedgrid.seds[:] / vega_flux)
+
+        # find minimum magnitudes based on 90th percentile of SED grid files
+        min_mags = np.zeros(len(filter_list))
+        for f, filt in enumerate(filter_list):
+            min_mags[f] = np.percentile(sedsMags[:, f], 95.0)
+        print(min_mags)
+
+        flag = np.zeros((len(ast_input_tab), len(filter_cols)), dtype="bool")
+        # flag is True if the models are brigter (=smaller number in mag)
+        # than the limits
+        for i, limit in enumerate(min_mags):
+            flag[:, i] = ast_input_tab[filter_cols[i]] < limit
+        s = np.sum(flag, axis=1)
+        prune_spots = s >= len(filter_list)
+
         ast_input_tab_pruned = ast_input_tab.copy()
-
-        if "F336W" in gst_filter_names:
-            prune_spots = (
-                (ast_input_tab_pruned["HST_WFC3_F336W"] > 30.5)
-                & (ast_input_tab_pruned["HST_WFC3_F475W"] > 32.5)
-                & (ast_input_tab_pruned["HST_WFC3_F814W"] > 29.0)
-            )
-        else:
-            prune_spots = (ast_input_tab_pruned["HST_WFC3_F475W"] > 32.5) & (
-                ast_input_tab_pruned["HST_WFC3_F814W"] > 29.0
-            )
-
-        ast_input_tab_pruned = ast_input_tab_pruned[~prune_spots]
+        ast_input_tab_pruned = ast_input_tab_pruned[prune_spots]
 
         # write pruned ast input table to a txt file
         ast_input_file_pruned = (
@@ -275,6 +289,9 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         )
 
         # print out number of pruned ASTs per source density bin as a sanity check
+        print("original input AST statistics per bin")
+        input_ast_bin_stats(settings, ast_input_file, field_names[b])
+
         print("pruned input AST statistics per bin")
         input_ast_bin_stats(settings, ast_input_file_pruned, field_names[b])
 
@@ -331,12 +348,12 @@ def input_ast_bin_stats(settings, ast_input_file, field_name):
     binnrs = np.unique(bin_foreach_source)
     bin_idxs = []
     for b in binnrs:
-        sources_for_bin = np.where(bin_foreach_source == b)
+        sources_for_bin = bin_foreach_source == b
         bin_idxs.append([sources_for_bin])
 
     for k in range(len(binnrs)):
         cat = ast_input[bin_idxs[k]]
-        print(binnrs[k], np.shape(cat["zeros"])[1])
+        print(binnrs[k], np.shape(cat["zeros"]))
 
 
 def create_beast_settings(
