@@ -72,7 +72,7 @@ def plot_source_density_map(sd_image_file, beast_settings_file):
     
     plt.tight_layout()
 
-    fig.savefig(sd_image_file.replace(".fits", ".png"))
+    fig.savefig(sd_image_file.replace("_image.fits", "_map_plot.png"))
     plt.close(fig)
     
 

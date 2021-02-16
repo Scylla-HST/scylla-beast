@@ -140,7 +140,7 @@ def plot_ast_gst_histogram(ast_file, sed_grid_file=None, gst_file=None):
 
     plt.tight_layout()
 
-    fig.savefig(ast_file.replace(".txt", ".png"))
+    fig.savefig(ast_file.replace(".txt", "_histogram.png"))
     plt.close(fig)
 
 
