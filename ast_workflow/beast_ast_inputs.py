@@ -118,9 +118,33 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         # -----------------
 
         # paths for the data/AST files
-        gst_file = "./data/{0}/{0}.vgst.fits".format(field_names[b])# + ".vgst.fits"
-        #ast_file = "./data/{0}/{0}.vgst.fake.fits".format(field_names[b])# + ".vgst.fits"
+        gst_file = "./data/{0}/{0}.vgst.fits".format(field_names[b])
         ast_input_file = "./{0}/{0}_inputAST.txt".format(field_names[b])
+
+        # if no galaxy is manually indicated, try to fetch from gst_file name
+        if galaxy == None:
+            print("no galaxy specified")
+            print("fetching galaxy from field name")
+            galaxy_attempt = field_names[b].split("_")[1].split("-")[0]
+            print("is this the correct galaxy? : %s" %galaxy_attempt)
+
+            # raw_input returns the empty string for "enter"
+            yes = {'yes','y', 'ye', ''}
+            no = {'no','n'}
+
+            response = 0
+
+            while response == 0:
+                choice = input().lower()
+                if choice in yes:
+                   galaxy = galaxy_attempt
+                   response=1
+                elif choice in no:
+                   print("please rerun with --galaxy specified")
+                   break
+                else:
+                   sys.stdout.write("Please respond with 'yes' or 'no'")
+
         # path for the reference image (if using for the background map)
         im_file = im_path[b]
 
@@ -133,8 +157,7 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
 
         # match with the gst filter list
         filter_ids = [gst_filter_names.index(i) for i in filters]
-
-        filter_ids = [int(i) for i in filter_ids]
+        filter_ids.sort()
 
         gst_filter_names = [gst_filter_names[i] for i in filter_ids]
         beast_filter_names = [beast_filter_names[i] for i in filter_ids]
@@ -206,21 +229,21 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
             create_background_density_map.main_make_map(background_args)
 
         # but we are doing source density bins!
-        #if not os.path.isfile(gst_file.replace(".fits", "_source_den_image.fits")):
-        print("No sd image file found")
-        # - pixel size of 10 arcsec
-        # - use ref_filter[b] between vega mags of 17 and peak_mags[ref_filter[b]]-0.5
-        sourceden_args = types.SimpleNamespace(
-            subcommand="sourceden",
-            catfile=gst_file,
-            erode_boundary=settings.ast_erode_selection_region,
-            pixsize=5,
-            npix=None,
-            mag_name=ref_filter[0] + "_VEGA",
-            mag_cut=[17, peak_mags[ref_filter[0]] - 0.5],
-            flag_name=flag_filter[0] + "_FLAG",
-        )
-        create_background_density_map.main_make_map(sourceden_args)
+        if not os.path.isfile(gst_file.replace(".fits", "_source_den_image.fits")):
+            print("No sd image file found")
+            # - pixel size of 10 arcsec
+            # - use ref_filter[b] between vega mags of 17 and peak_mags[ref_filter[b]]-0.5
+            sourceden_args = types.SimpleNamespace(
+                subcommand="sourceden",
+                catfile=gst_file,
+                erode_boundary=settings.ast_erode_selection_region,
+                pixsize=5,
+                npix=None,
+                mag_name=ref_filter[0] + "_VEGA",
+                mag_cut=[17, peak_mags[ref_filter[0]] - 0.5],
+                flag_name=flag_filter[0] + "_FLAG",
+            )
+            create_background_density_map.main_make_map(sourceden_args)
 
         # new file name with the source density column
         gst_file_sd = gst_file.replace(".fits", "_with_sourceden.fits")
@@ -238,17 +261,7 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         if settings.n_subgrid > 1:
             gs_str = "sub*"
 
-        # It seems like there's a repeat call for the same physics file
-        # but with a different variable name. We should probably get rid of
-        # this duplicate since it's only used once.
-
-        #sed_files = glob.glob(
-        #    "./{0}/{0}_seds.grid{1}.hd5".format(field_names[b], gs_str)
-        #)
-
-        # And replace sed_files with model_grid_files
-
-        # list of SED files (physics models)
+        # try to fetch the list of SED files (physics models)
         model_grid_files = sorted(
             glob.glob(
                 "./{0}/{0}_seds.grid*.hd5".format(
@@ -257,14 +270,21 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
             )
         )
 
-        print(model_grid_files)
-
         # only make the physics model they don't already exist
         if len(model_grid_files) < settings.n_subgrid:
             # directly create physics model grids
             create_physicsmodel.create_physicsmodel(
                 settings, nprocs=1, nsubs=settings.n_subgrid
             )
+
+        # fetch the list of SED files again (physics models)
+        model_grid_files = sorted(
+            glob.glob(
+                "./{0}/{0}_seds.grid*.hd5".format(
+                    field_names[b],
+                )
+            )
+        )
 
         # -------------------
         # 3. make AST inputs
@@ -529,7 +549,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--supp",
         type=int,
-        default=None,
+        default=0,
         help="add N supplemental ASTs",
     )
 
