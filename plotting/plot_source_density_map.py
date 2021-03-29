@@ -2,6 +2,8 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+import argparse
+
 from beast.tools import beast_settings
 
 def plot_source_density_map(sd_image_file, beast_settings_file):

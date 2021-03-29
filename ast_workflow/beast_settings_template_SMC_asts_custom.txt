@@ -110,6 +110,7 @@ ast_pixel_distribution = 10.0
 # Name of the reference image used by DOLPHOT when running the measured
 # photometry.
 ast_reference_image = "15891_SMC-3956ne-9632_F475W_drc_wcs_ref_test.fits"
+ast_reference_image_hdu_extension = 0
 
 # ast_coord_boundary : None, or list of two arrays (optional)
 # If supplied, these RA/Dec coordinates will be used to limit the region
@@ -125,8 +126,12 @@ ast_coord_boundary = None
 # ast_coord_boundary (if set) and a convex hull around the photometry catalog.
 ast_erode_selection_region = 0.5
 
+ast_existing_file = None
 
 ast_supplement = False
+
+ast_suppl_maglimit = None
+ast_suppl_colorlimit = None
 
 #-------------------------------------------
 # Noise Model Artificial Star Test Parameters
@@ -256,4 +261,4 @@ add_spectral_properties_kwargs = dict(filternames=filters)
 sd_binmode = "custom"
 sd_Nbins = None
 sd_binwidth = None
-sd_custom = [ 0., 0.5, 1.07721735, 2.32079442, 5.]
+sd_custom = [0, 0.27, 0.526, 1.026, 2] 

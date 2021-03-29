@@ -32,7 +32,7 @@ from astropy.coordinates import Angle
 from astropy import units as u
 
 
-def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=None):
+def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=None, supp=0):
     """
     This does all of the steps for generating AST inputs and can be used
     a wrapper to automatically do most steps for multiple fields.
@@ -105,10 +105,7 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         "HST_WFC3_F657N",
     ]
 
-    filter_ids = [int(i) for i in filter_ids]
 
-    gst_filter_names = [gst_filter_names[i] for i in filter_ids]
-    beast_filter_names = [beast_filter_names[i] for i in filter_ids]
 
     for b in range(n_field):
 
@@ -121,10 +118,51 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         # -----------------
 
         # paths for the data/AST files
-        gst_file = "./data/" + field_names[b] + ".st.fits"
-        ast_file = "./data/" + field_names[b] + ".st.fake.fits"
+        gst_file = "./data/{0}/{0}.vgst.fits".format(field_names[b])
+        ast_input_file = "./{0}/{0}_inputAST.txt".format(field_names[b])
+
+        # if no galaxy is manually indicated, try to fetch from gst_file name
+        if galaxy == None:
+            print("no galaxy specified")
+            print("fetching galaxy from field name")
+            galaxy_attempt = field_names[b].split("_")[1].split("-")[0]
+            print("is this the correct galaxy? : %s" %galaxy_attempt)
+
+            # raw_input returns the empty string for "enter"
+            yes = {'yes','y', 'ye', ''}
+            no = {'no','n'}
+
+            response = 0
+
+            while response == 0:
+                choice = input().lower()
+                if choice in yes:
+                   galaxy = galaxy_attempt
+                   response=1
+                elif choice in no:
+                   print("please rerun with --galaxy specified")
+                   break
+                else:
+                   sys.stdout.write("Please respond with 'yes' or 'no'")
+
         # path for the reference image (if using for the background map)
         im_file = im_path[b]
+
+        # fetch filter ids
+        gst_data = Table.read(gst_file)
+        filter_cols = [c for c in gst_data.colnames if "VEGA" in c]
+
+        # extract every filter mentioned in the table
+        filters = [f.split("_")[0] for f in filter_cols]
+
+        # match with the gst filter list
+        filter_ids = [gst_filter_names.index(i) for i in filters]
+        filter_ids.sort()
+
+        gst_filter_names = [gst_filter_names[i] for i in filter_ids]
+        beast_filter_names = [beast_filter_names[i] for i in filter_ids]
+
+        print(beast_filter_names)
 
         # region file with catalog stars
         # make_region_file(gst_file, ref_filter[b])
@@ -137,18 +175,20 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         print("creating beast settings file")
         print("")
 
-        create_beast_settings(
+        beast_settings_filename = create_beast_settings(
             gst_file,
-            ast_file,
+            ast_input_file,
             gst_filter_names,
             beast_filter_names,
             galaxy,
             ref_image=im_file,
+            supp=supp
         )
 
         # load in beast settings to get number of subgrids
         settings = beast_settings.beast_settings(
-            "beast_settings_" + galaxy + "_asts_" + field_names[b] + ".txt"
+            beast_settings_filename
+            #"beast_settings_" + galaxy + "_asts_" + field_names[b] + ".txt"
         )
 
         # -----------------
@@ -177,6 +217,7 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
             background_args = types.SimpleNamespace(
                 subcommand="background",
                 catfile=gst_file,
+                erode_boundary=settings.ast_erode_selection_region,
                 pixsize=5,
                 npix=None,
                 reference=im_file,
@@ -184,15 +225,18 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
                 ann_width=20,
                 cat_filter=[ref_filter, "90"],
             )
+
             create_background_density_map.main_make_map(background_args)
 
         # but we are doing source density bins!
         if not os.path.isfile(gst_file.replace(".fits", "_source_den_image.fits")):
+            print("No sd image file found")
             # - pixel size of 10 arcsec
             # - use ref_filter[b] between vega mags of 17 and peak_mags[ref_filter[b]]-0.5
             sourceden_args = types.SimpleNamespace(
                 subcommand="sourceden",
                 catfile=gst_file,
+                erode_boundary=settings.ast_erode_selection_region,
                 pixsize=5,
                 npix=None,
                 mag_name=ref_filter[0] + "_VEGA",
@@ -217,28 +261,7 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
         if settings.n_subgrid > 1:
             gs_str = "sub*"
 
-        sed_files = glob.glob(
-            "./{0}_beast/{0}_beast_seds.grid{1}.hd5".format(field_names[b], gs_str)
-        )
-
-        # only make the physics model they don't already exist
-        if len(sed_files) < settings.n_subgrid:
-            # directly create physics model grids
-            create_physicsmodel.create_physicsmodel(
-                settings, nprocs=1, nsubs=settings.n_subgrid
-            )
-
-        # -------------------
-        # 3. make AST inputs
-        # -------------------
-
-        # only create an AST input list if the ASTs don't already exist
-        ast_input_file = "./" + field_names[b] + "/" + field_names[b] + "_inputAST.txt"
-
-        if not os.path.isfile(ast_input_file):
-            make_ast_inputs.make_ast_inputs(settings, pick_method="flux_bin_method")
-
-        # list of SED files (physics models)
+        # try to fetch the list of SED files (physics models)
         model_grid_files = sorted(
             glob.glob(
                 "./{0}/{0}_seds.grid*.hd5".format(
@@ -247,58 +270,49 @@ def beast_ast_inputs(field_name=None, ref_image=None, filter_ids=None, galaxy=No
             )
         )
 
-        # --------------------
-        # 3.1 "prune" AST inputs
-        # --------------------
+        # only make the physics model they don't already exist
+        if len(model_grid_files) < settings.n_subgrid:
+            # directly create physics model grids
+            create_physicsmodel.create_physicsmodel(
+                settings, nprocs=1, nsubs=settings.n_subgrid
+            )
 
-        ast_input_tab = Table.read(ast_input_file, format="ascii")
-
-        # find filter list in asts
-        filter_cols = [col for col in ast_input_tab.colnames if "_" in col]
-        filter_list = [col[-5:] for col in filter_cols]
-
-        # load model SED grid and convert to magnitudes
-        modelsedgrid = SEDGrid(model_grid_files[b])
-        with Vega() as v:
-            _, vega_flux, _ = v.getFlux(filter_cols)
-        sedsMags = -2.5 * np.log10(modelsedgrid.seds[:] / vega_flux)
-
-        # find minimum magnitudes based on 90th percentile of SED grid files
-        min_mags = np.zeros(len(filter_list))
-        for f, filt in enumerate(filter_list):
-            min_mags[f] = np.percentile(sedsMags[:, f], 95.0)
-        print(min_mags)
-
-        flag = np.zeros((len(ast_input_tab), len(filter_cols)), dtype="bool")
-        # flag is True if the models are brigter (=smaller number in mag)
-        # than the limits
-        for i, limit in enumerate(min_mags):
-            flag[:, i] = ast_input_tab[filter_cols[i]] < limit
-        s = np.sum(flag, axis=1)
-        prune_spots = s >= len(filter_list)
-
-        ast_input_tab_pruned = ast_input_tab.copy()
-        ast_input_tab_pruned = ast_input_tab_pruned[prune_spots]
-
-        # write pruned ast input table to a txt file
-        ast_input_file_pruned = (
-            "./" + field_name + "/" + field_name + "_inputAST_pruned.txt"
-        )
-        ast_input_tab_pruned.write(
-            ast_input_file_pruned, format="ascii", overwrite=True
+        # fetch the list of SED files again (physics models)
+        model_grid_files = sorted(
+            glob.glob(
+                "./{0}/{0}_seds.grid*.hd5".format(
+                    field_names[b],
+                )
+            )
         )
 
-        # print out number of pruned ASTs per source density bin as a sanity check
-        print("original input AST statistics per bin")
-        input_ast_bin_stats(settings, ast_input_file, field_names[b])
+        # -------------------
+        # 3. make AST inputs
+        # -------------------
 
-        print("pruned input AST statistics per bin")
-        input_ast_bin_stats(settings, ast_input_file_pruned, field_names[b])
+        print("")
+        print("making AST inputs")
+        print("")
 
-        # compare magnitude histograms of pruned ASTs with catalog
+        # only create an AST input list if the ASTs don't already exist
+        if not os.path.isfile(ast_input_file):
+            make_ast_inputs.make_ast_inputs(settings, pick_method="flux_bin_method")
+
+        # compare magnitude histograms of ASTs with catalog
         plot_ast_histogram.plot_ast_histogram(
-            ast_file=ast_input_file_pruned, sed_grid_file=model_grid_files[0]
+            ast_file=ast_input_file, sed_grid_file=model_grid_files[0]
         )
+
+        if supp != 0:
+
+            print("")
+            print("making supplemental AST inputs")
+            print("")
+
+            ast_input_supp_file = "./{0}/{0}_inputAST_suppl.txt".format(field_names[b])
+
+            if not os.path.isfile(ast_input_supp_file):
+                make_ast_inputs.make_ast_inputs(settings, pick_method="suppl_seds")
 
         print("now go check the diagnostic plots!")
 
@@ -363,6 +377,7 @@ def create_beast_settings(
     beast_filter_label,
     galaxy,
     ref_image="None",
+    supp= 0
 ):
     """
     Create a beast_settings file for the given field.  This will open the file to
@@ -388,6 +403,9 @@ def create_beast_settings(
 
     ref_image : string (default='None')
         path+name of image to use as reference for ASTs
+
+    supp : integer (default=False)
+        How many supplemental
 
     Returns
     -------
@@ -420,7 +438,8 @@ def create_beast_settings(
     orig_file.close()
 
     # write out an edited beast_settings
-    new_file = open("beast_settings_" + galaxy + "_asts_" + field_name + ".txt", "w")
+    beast_settings_filename = gst_file.replace("{0}.vgst.fits".format(field_name), "beast_settings_" + galaxy + "_asts_" + field_name + ".txt")
+    new_file = open(beast_settings_filename, "w")
 
     for i in range(len(settings_lines)):
 
@@ -440,19 +459,31 @@ def create_beast_settings(
         elif settings_lines[i][0:14] == "basefilters = ":
             new_file.write("basefilters = ['" + "','".join(filter_list_base) + "'] \n")
         # AST stuff
-        elif settings_lines[i][0:27] == "ast_source_density_table = ":
+        elif settings_lines[i][0:20] == "ast_density_table = ":
             new_file.write(
-                'ast_source_density_table = "'
-                + gst_file.replace(".fits", "_sourcedens_map.hd5")
+                'ast_density_table = "'
+                + gst_file.replace(".fits", "_sourceden_map.hd5")
                 + '" \n'
             )
         elif settings_lines[i][0:22] == "ast_reference_image = ":
             new_file.write('ast_reference_image = "' + ref_image + '" \n')
+
+        # supplemental AST stuff
+        elif settings_lines[i][0:17] == "ast_supplement = ":
+            if supp != 0:
+                new_file.write('ast_supplement = True \nast_N_supplement = ' + str(supp) + '\n')
+
+        #elif settings_lines[i][0:20] == "ast_existing_file = ":
+        #    if supp != 0:
+        #        new_file.write('ast_existing_file = "' + ast_file.replace(".txt", "_seds.txt") + '"\n')
+
         # none of those -> write line as-is
         else:
             new_file.write(settings_lines[i])
 
     new_file.close()
+
+    return beast_settings_filename
 
 
 def make_region_file(gst_file, ref_filter):
@@ -515,6 +546,13 @@ if __name__ == "__main__":
         help="target galaxy",
     )
 
+    parser.add_argument(
+        "--supp",
+        type=int,
+        default=0,
+        help="add N supplemental ASTs",
+    )
+
     args = parser.parse_args()
 
     beast_ast_inputs(
@@ -522,4 +560,5 @@ if __name__ == "__main__":
         ref_image=args.ref_image,
         filter_ids=args.filter_ids,
         galaxy=args.galaxy,
+        supp=args.supp
     )
