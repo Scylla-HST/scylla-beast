@@ -204,11 +204,13 @@ def beast_production_wrapper():
                 "/ocean/projects/ast190023p/shared/scylla/mastergrid_LMC/mastergrid_LMC_seds.gridsub" + str(i) + ".hd5"
                 for i in range(settings.n_subgrid)
             ]
+            gal_name = "LMC"
         if "SMC" in gst_file:
             master_sed_files = [
                 "/ocean/projects/ast190023p/shared/scylla/mastergrid_SMC/mastergrid_SMC_seds.gridsub" + str(i) + ".hd5"
                 for i in range(settings.n_subgrid)
             ]
+            gal_name = "SMC"
 
         if not os.path.isfile(master_sed_files[0]):
             make_mastergrid()
@@ -219,8 +221,16 @@ def beast_production_wrapper():
             for i in range(settings.n_subgrid)
         ]
 
+        # location of filter-specific mastergirds
+        master_sed_folder_by_filter = "/ocean/projects/ast190023p/shared/scylla/mastergrid_" + gal_name + \
+                                      "_by_filter/" + "_".join(filters) + "/"
+
         # copy from the master
         for i, sed_file in enumerate(model_grid_files):
+
+            # if mastergrids for this filter combination already exist, copy them directly
+            if len(os.listdir(master_sed_folder_by_filter)) != 0:
+                os.system("cp " + master_sed_folder_by_filter + "*gridsub{0}* ".format(i) + sed_file)
 
             # grid doesn't exist -> script to copy over from master grid
             if not os.path.isfile(sed_file):
