@@ -228,12 +228,13 @@ def beast_production_wrapper():
         # copy from the master
         for i, sed_file in enumerate(model_grid_files):
 
-            # if mastergrids for this filter combination already exist, copy them directly
-            if len(os.listdir(master_sed_folder_by_filter)) != 0:
-                os.system("cp " + master_sed_folder_by_filter + "*gridsub{0}* ".format(i) + sed_file)
-
             # grid doesn't exist -> script to copy over from master grid
             if not os.path.isfile(sed_file):
+
+                # if mastergrids for this filter combo exist, copy them directly
+                if len(os.listdir(master_sed_folder_by_filter)) != 0:
+                    os.system("cp " + master_sed_folder_by_filter + "*gridsub{0}* ".format(i) + sed_file)
+                    continue
 
                 # file name for script
                 fname = "./{0}/model_batch_jobs/copy_gridsub{1}.script".format(
