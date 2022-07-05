@@ -204,11 +204,13 @@ def beast_production_wrapper():
                 "/ocean/projects/ast190023p/shared/scylla/mastergrid_LMC/mastergrid_LMC_seds.gridsub" + str(i) + ".hd5"
                 for i in range(settings.n_subgrid)
             ]
+            gal_name = "LMC"
         if "SMC" in gst_file:
             master_sed_files = [
                 "/ocean/projects/ast190023p/shared/scylla/mastergrid_SMC/mastergrid_SMC_seds.gridsub" + str(i) + ".hd5"
                 for i in range(settings.n_subgrid)
             ]
+            gal_name = "SMC"
 
         if not os.path.isfile(master_sed_files[0]):
             make_mastergrid()
@@ -219,11 +221,20 @@ def beast_production_wrapper():
             for i in range(settings.n_subgrid)
         ]
 
+        # location of filter-specific mastergirds
+        master_sed_folder_by_filter = "/ocean/projects/ast190023p/shared/scylla/mastergrid_" + gal_name + \
+                                      "_by_filter/" + "_".join(filters) + "/"
+
         # copy from the master
         for i, sed_file in enumerate(model_grid_files):
 
             # grid doesn't exist -> script to copy over from master grid
             if not os.path.isfile(sed_file):
+
+                # if mastergrids for this filter combo exist, copy them directly
+                if len(os.listdir(master_sed_folder_by_filter)) != 0:
+                    os.system("cp " + master_sed_folder_by_filter + "*gridsub{0}* ".format(i) + sed_file)
+                    continue
 
                 # file name for script
                 fname = "./{0}/model_batch_jobs/copy_gridsub{1}.script".format(
@@ -262,9 +273,8 @@ def beast_production_wrapper():
                     queue="EM",
                     nodes="24",
                     run_time="10:00:00",
-                    #mem="{0:.0f}GB".format(
-                    #    os.path.getsize(master_sed_files[i]) / 10 ** 9 * 2.9
-                    #),
+                    # mem="{0:.0f}GB".format(
+                    #     os.path.getsize(master_sed_files[i]) / 10 ** 9 * 2.9), 
                 )
                 sbatch_list.append("sbatch " + fname)
                 print("sbatch " + fname)
@@ -340,15 +350,6 @@ def beast_production_wrapper():
         print("")
         print("splitting observations by " + bin_table)
         print("")
-    
-        min_n_subfiles=5
-
-        # check if any trimmed gst_files have less than 5 sources
-        #for i, gfile in enumerate(gst_file_cut):
-        #    file_len = len(Table.read(gfile))
-        #    if file_len < min_n_subfiles:
-        #        min_n_subfiles=file_len
-        #        print("setting min_n_subfiles = "+file_len)
 
         split_catalog_using_map.split_main(
             settings,
@@ -356,7 +357,7 @@ def beast_production_wrapper():
             ast_file_cut,
             gst_file.replace(".fits", "_" + bin_table + "_map.hd5"),
             n_per_file=1000,
-            min_n_subfile=min_n_subfiles,
+            min_n_subfile=3,
         )
 
         # check for pathological cases of AST bins not matching photometry bins
@@ -679,7 +680,7 @@ def beast_production_wrapper():
                     username, settings.project
                 ),
                 run_time="12:00:00",
-                mem="128GB",
+                # mem="128GB",
             )
 
             sbatch_list.append("sbatch " + fname)
@@ -780,14 +781,14 @@ def make_mastergrid():
         write_sbatch_file.write_sbatch_file(
             f"create_{gal_name}_mastergrid.script",
             f'./mastergrid_{gal_name}/model_batch_jobs/create_physicsmodel_"${{SLURM_ARRAY_TASK_ID}}".job',
-            "/ocean/projects/ast190023p/cmurray3/scylla",
+            "/ocean/projects/ast190023p/petiay/scylla",
             modules=["module load anaconda3", "source activate beast_prod"],
             job_name=f"{gal_name}grid",
-            stdout_file=f"/ocean/projects/ast190023p/cmurray3/scylla/mastergrid_{gal_name}/model_batch_jobs/logs/%A_%a.out",
+            stdout_file=f"/ocean/projects/ast190023p/petiay/scylla/mastergrid_{gal_name}/model_batch_jobs/logs/%A_%a.out",
             egress=False,
             queue="EM",
             run_time="40:00:00",
-            mem="570GB",
+            # mem="570GB",
             array=[0, settings.n_subgrid - 1],
         )
 
