@@ -1,0 +1,19 @@
+#!/bin/bash
+
+#SBATCH -J beast_LH          # Job name
+#SBATCH -o /ocean/projects/ast190023p/cmurray3/new_sim/xsede_logs/%j.out # Specify stdout output file (%j expands to jobId)
+#SBATCH -p RM                # Queue name
+#SBATCH -t 5:00:00           # Run time (hh:mm:ss)
+#SBATCH -N 1                 # Number of nodes
+#SBATCH --ntasks-per-node 1  # Number of cores (memory=4.5 GB/core)
+
+# move to appropriate directory
+cd /ocean/projects/ast190023p/cmurray3/new_sim
+
+# Load any necessary modules
+# Loading modules in the script ensures a consistent environment.
+module load anaconda3
+source activate beast_prod
+
+# Launch a job
+python3 create_sim.py -p
