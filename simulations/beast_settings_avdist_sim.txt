@@ -1,0 +1,212 @@
+import numpy as np
+
+from astropy import units
+
+# BEAST imports
+from beast.physicsmodel.stars import isochrone
+from beast.physicsmodel.stars import stellib
+from beast.physicsmodel.dust import extinction
+from beast.observationmodel.noisemodel import absflux_covmat
+from beast.observationmodel.extra_filters import make_integration_filter
+#from extra_filters import make_integration_filter, make_top_hat_filter
+
+#-----------------------------------------------------------------
+# User inputs                                   [sec:conf]
+#-----------------------------------------------------------------
+# Parameters that are required to make models
+# and to fit the data
+#-----------------------------------------------------------------
+# AC == authomatically created
+# indicates where user's input change is NOT necessary/recommeded
+#-----------------------------------------------------------------
+
+# project : string
+#   the name of the output results directory
+project = "avdist_sim"
+
+# name of the survey
+#  used for the creation of the unique name for each source
+surveyname = 'avdist_sim'
+
+# filters : list of strings
+#   full filter names in BEAST filter database
+filters = [
+    'HST_WFC3_F225W',
+    'HST_WFC3_F275W',
+    'HST_WFC3_F336W',
+    'HST_WFC3_F475W',
+    'HST_WFC3_F814W',
+    'HST_WFC3_F110W',
+    'HST_WFC3_F160W'
+]
+
+# basefilters : list of strings
+#   short names for filters
+basefilters = ['F225W', 'F275W', 'F336W', 'F475W', 'F814W', 'F110W', 'F160W']
+
+
+# Integrating from 228A to 912A, where 227.8A corresponds to 4 Ryd (=54.42eV)
+qion_filter228 = make_integration_filter(228., 916., 1, 'F_QION228')
+qion_filter228.name = 'F_QION228' # getting rid of instrument etc
+
+# Add GALEX FUV filter
+additional_filters = ['GALEX_FUV']
+
+# obs_colnames : list of strings
+#   names of columns for filters in the observed catalog
+#   need to match column names in the observed catalog,
+#   input data MUST be in fluxes, NOT in magnitudes
+#   fluxes MUST be in normalized Vega units
+obs_colnames = [ f.upper() + '_RATE' for f in basefilters ]
+
+# obsfile : string
+#   pathname of the observed catalog
+obsfile = " "
+
+# astfile : string
+#   pathname of the ast catalog
+astfile = "data/avdist_sim.fake.fits"
+
+#----------------------------------
+# Source Density Binning Parameters
+#----------------------------------
+
+# sd_binmode : string
+#   Convention for source density binning, either "linear" or "log"
+#   Must be set to 'None' if not used.
+sd_binmode= "custom"
+
+# sd_Nbins : integer
+#   Number of source density bins.
+#   Must be set to 'None' if not used.
+sd_Nbins = None
+
+# sd_binwidth : integer
+#   Source density bin width. Used only if the bin mode is linear.
+#   Must be set to 'None' if not used.
+sd_binwidth = None
+
+# sd_custom : list
+#   List of custom bin edges to use for source density binning. Will
+#   override all other source density binning parameters if set.
+#   Overrides sd_binmode, sd_Nbins, and sd_binwidth.
+#   Must be set to 'None' if not used.
+sd_custom = [0, 0.27, 0.526, 1.026, 2]
+
+#-------------------------------------------
+#Grid
+#-------------------------------------------
+
+# n_subgrid : integer
+#     Number of sub-grids to use (1 means no subgrids).  These are
+#     useful when the physics model grid is too large to read into
+#     memory.
+n_subgrid = 1
+
+################
+
+### Distance/Velocity
+
+# Distances: distance to the galaxy [min, max, step] or [fixed number]
+distances = [47,77,10]
+# distance_prior_model = {'name': 'flat'}
+
+distance_prior_model = {"name": "absexponential",
+                        "dist0": 60.0*units.kpc,
+                        "tau": 5.*units.kpc,
+                        "amp": 1.0}
+
+# Distance unit (any length or units.mag)
+distance_unit = units.kpc
+
+# velocity of galaxy
+# (van der Marel et al. 2002)
+velocity = 172 * units.km / units.s
+
+################
+
+### Stellar grid definition
+
+# log10(Age) -- [min,max,step] to generate the isochrones in years
+#   example [6.0, 10.13, 1.0]
+logt = [6.0, 10.13,1.0]
+age_prior_model = {'name': 'flat'}
+
+# note: Mass is not sampled, instead the isochrone supplied
+#       mass spacing is used instead
+mass_prior_model = {"name": "kroupa"}
+
+# Metallicity : list of floats
+#   Here: Z == Z_initial, NOT Z(t) surface abundance
+#   PARSECv1.2S accepts values 1.e-4 < Z < 0.06
+# the master grid is log Z = -2.1 to 0.3 in steps of 0.3
+# the PARSEC models have Z_sun = 0.0152
+z = (
+    10 ** np.array([-2.1,-1.5, -0.9,-0.3]) * 0.0152
+).tolist()
+met_prior_model = {"name": "flat"}
+
+# Isochrone Model Grid
+#   Current Choices: Padova or MIST
+#   PadovaWeb() -- `modeltype` param for iso sets from ezpadova
+#      (choices: parsec12s_r14, parsec12s, 2010, 2008, 2002)
+#   MISTWeb() -- `rotation` param (choices: vvcrit0.0=default, vvcrit0.4)
+#
+# Default: PARSEC+CALIBRI
+oiso = isochrone.PadovaWeb()
+# Alternative: PARSEC1.2S -- old grid parameters
+#oiso = isochrone.PadovaWeb(modeltype='parsec12s', filterPMS=True)
+# Alternative: MIST -- v1, no rotation
+#oiso = isochrone.MISTWeb()
+
+# Stellar Atmospheres library definition
+osl = stellib.Tlusty() + stellib.Kurucz()
+
+################
+
+### Dust extinction grid definition
+extLaw = extinction.Generalized_RvFALaw(ALaw=extinction.Generalized_DustExt(curve='F19_D03_extension'), BLaw=extinction.Generalized_DustExt(curve='G03_SMCBar_WD01_extension'))
+#extLaw = extinction.Generalized_RvFALaw(ALaw=extinction.Generalized_DustExt(curve='F19'), BLaw=extinction.Generalized_DustExt(curve='G03_SMCBar'))
+#extLaw = extinction.Gordon16_RvFALaw()
+
+# A(V): dust column in magnitudes
+#   acceptable avs > 0.0
+#   example [min, max, step] = [0.0, 10.055, 1.0]
+avs = [0.0, 3.0, 0.2]
+#av_prior_model = {'name': 'flat'}
+#av_prior_model = {'name': 'lognormal',
+#                  'max_pos': 2.0,
+#                  'sigma': 1.0,
+#                  'N': 10.}
+
+av_prior_model = {"name": "step",
+                  "dist0": 64 * units.kpc,
+                  "amp1": 0.1,
+                  "damp2": 1.0,
+                  "lgsigma1": 0.05,
+                  "lgsigma2": 0.05}
+
+# R(V): dust average grain size
+#   example [min, max, step] = [2.0,6.0,1.0]
+rvs = [2.24, 5.74, 1.0]
+rv_prior_model = {'name': 'flat'}
+#rv_prior_model = {'name': 'lognormal',
+#                  'max_pos': 2.0,
+#                  'sigma': 1.0,
+#                  'N': 10.}
+
+# fA: mixture factor between "MW" and "SMCBar" extinction curves
+#   example [min, max, step] = [0.0,1.0, 0.25]
+fAs = [0.0, 1.0, 0.25]
+fA_prior_model = {'name': 'flat'}
+#fA_prior_model = {'name': 'lognormal',
+#                  'max_pos': 0.5,
+#                  'sigma': 0.2,
+#                  'N': 10.}
+
+################
+
+# add in the standard filters to enable output of stats and pdf1d values
+# for the observed filters (AC)
+add_spectral_properties_kwargs = dict(filternames=filters + additional_filters,filters=[qion_filter228])
+absflux_a_matrix = absflux_covmat.hst_frac_matrix(filters)
